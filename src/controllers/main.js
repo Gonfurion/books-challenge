@@ -42,7 +42,16 @@ const mainController = {
   },
   deleteBook: (req, res) => {
     // Implement delete book
-    res.render("home");
+    let bookId = req.params.id;
+
+    db.Booksauthors.destroy({ where: { BookId: bookId }, force: true })
+      .then(() => {
+        db.Book.destroy({ where: { id: bookId } });
+      })
+      .then(() => {
+        return res.redirect("/");
+      })
+      .catch((error) => res.send(error));
   },
   authors: (req, res) => {
     db.Author.findAll()
@@ -53,7 +62,19 @@ const mainController = {
   },
   authorBooks: (req, res) => {
     // Implement books by author
-    res.render("authorBooks");
+    let ide = req.params.id;
+    var condition = ide ? { [db.Sequelize.Op.like]: `%${ide}%` } : null;
+    db.Author.findAll({
+      include: [{ association: "books" }],
+
+      where: { id: condition },
+    })
+      .then((authors) => {
+        console.log(JSON.stringify(authors, null, 2));
+
+        res.render("authorBooks", { authors });
+      })
+      .catch((error) => console.log(error));
   },
   register: (req, res) => {
     res.render("register");
@@ -73,20 +94,81 @@ const mainController = {
   },
   login: (req, res) => {
     // Implement login process
+
     res.render("login");
   },
   processLogin: (req, res) => {
     // Implement login process
-    res.render("home");
+    let toLogin = db.User.findOne({ where: { email: req.body.email } });
+    Promise.all([toLogin]).then(([toLogin]) => {
+      if (toLogin) {
+        let passwordOk = bcryptjs.compareSync(
+          req.body.password,
+          toLogin.Pass
+        );
+
+        if (passwordOk) {
+          delete toLogin.Pass;
+          req.session.userLogged = toLogin;
+
+          if (req.body.remember_user) {
+            res.cookie("userEmail", req.body.email, { maxAge: 1000 * 60 * 60 });
+          }
+
+          return res.redirect("/");
+        }
+        return res.render("login", {
+          errors: {
+            email: {
+              msg: "Las credenciales son inválidas",
+            },
+          },
+        });
+      }
+
+      return res.render("login", {
+        errors: {
+          email: {
+            msg: "No se encuentra este email en nuestra base de datos",
+          },
+        },
+      });
+    });
   },
   edit: (req, res) => {
     // Implement edit book
-    res.render("editBook", { id: req.params.id });
+    db.Book.findByPk(req.params.id, {
+      include: [{ association: "authors" }],
+    })
+      .then((book) => {
+        res.render("editBook", { book, user: req.session.userLogged });
+      })
+      .catch((error) => console.log(error));
   },
   processEdit: (req, res) => {
     // Implement edit book
-    res.render("home");
+    let bookId = req.params.id;
+    db.Book.update(
+      {
+        title: req.body.title,
+        cover: req.body.cover,
+        descripcion: req.body.descripcion,
+      },
+      {
+        where: { id: bookId },
+      }
+    )
+      .then(() => {
+        return res.redirect("/");
+      })
+      .catch((error) => {
+        console.log(error);
+      });
+  },
+  logout: (req, res) => {
+    res.clearCookie("userEmail");
+    req.session.destroy();
+    return res.redirect("/");
   },
 };
-
 module.exports = mainController;
